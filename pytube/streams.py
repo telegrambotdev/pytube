@@ -62,7 +62,7 @@ class Stream:
         self.is_otf: bool = stream["is_otf"]
         self.bitrate: Optional[int] = stream["bitrate"]
 
-        self._filesize: Optional[int] = None  # filesize in bytes
+        self._filesize: Optional[int] = stream['content_length']  # filesize in bytes
 
         # Additional information about the stream format, such as resolution,
         # frame rate, and whether the stream is live (HLS) or 3D.
@@ -147,7 +147,7 @@ class Stream:
         :returns:
             Filesize (in bytes) of the stream.
         """
-        if self._filesize is None:
+        if self._filesize == 0:
             try:
                 self._filesize = request.filesize(self.url)
             except HTTPError as e:
@@ -229,8 +229,11 @@ class Stream:
             (optional) Skip existing files, defaults to True
         :type skip_existing: bool
         :param timeout:
-            (optional) Request timeout length in seconds
+            (optional) Request timeout length in seconds. Uses system default.
         :type timeout: int
+        :param max_retries:
+            (optional) Number of retries to attempt after socket timeout. Defaults to 0.
+        :type max_retries: int
         :returns:
             Path to the saved video
         :rtype: str

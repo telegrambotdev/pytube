@@ -20,6 +20,13 @@ Playlist Object
    :members:
    :inherited-members:
 
+Channel Object
+--------------
+
+.. autoclass:: pytube.contrib.channel.Channel
+   :members:
+   :inherited-members:
+
 Stream Object
 -------------
 
@@ -45,6 +52,13 @@ CaptionQuery Object
 -------------------
 
 .. autoclass:: pytube.query.CaptionQuery
+   :members:
+   :inherited-members:
+
+Search Object
+-------------
+
+.. autoclass:: pytube.contrib.search.Search
    :members:
    :inherited-members:
 

@@ -58,6 +58,8 @@ of pytube.
    user/streams
    user/captions
    user/playlist
+   user/channel
+   user/search
    user/cli
    user/exceptions
 

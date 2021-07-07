@@ -27,22 +27,16 @@ def test_stream_to_buffer(mock_request, cipher_signature):
     assert buffer.write.call_count == 3
 
 
-@mock.patch(
-    "pytube.streams.request.head", MagicMock(return_value={"content-length": "6796391"})
-)
 def test_filesize(cipher_signature):
-    assert cipher_signature.streams[0].filesize == 6796391
+    assert cipher_signature.streams[0].filesize == 28282013
 
 
-@mock.patch(
-    "pytube.streams.request.head", MagicMock(return_value={"content-length": "6796391"})
-)
 def test_filesize_approx(cipher_signature):
     stream = cipher_signature.streams[0]
 
     assert stream.filesize_approx == 28309811
     stream.bitrate = None
-    assert stream.filesize_approx == 6796391
+    assert stream.filesize_approx == 28282013
 
 
 def test_default_filename(cipher_signature):
@@ -57,7 +51,7 @@ def test_title(cipher_signature):
 
 
 def test_expiration(cipher_signature):
-    assert cipher_signature.streams[0].expiration == datetime(2020, 10, 30, 5, 39, 41)
+    assert cipher_signature.streams[0].expiration >= datetime(2020, 10, 30, 5, 39, 41)
 
 
 def test_caption_tracks(presigned_video):
@@ -97,7 +91,15 @@ def test_description(cipher_signature):
 
 
 def test_rating(cipher_signature):
-    assert cipher_signature.rating == 2.0860765
+    """Test the rating value of a YouTube object.
+
+    This changes each time we rebuild the json files, so we want to use
+    an estimate of where it will be. The two values seen to make this
+    estimate were 2.073431 and 2.0860765. This represents a range of
+    ~0.007 below and ~0.006 above 2.08. Allowing for up to 0.02 in either
+    direction should provide a steady indicator of correctness.
+    """
+    assert abs(cipher_signature.rating - 2.08) < 0.02
 
 
 def test_length(cipher_signature):
@@ -112,7 +114,7 @@ def test_views(cipher_signature):
     "pytube.streams.request.head", MagicMock(return_value={"content-length": "6796391"})
 )
 @mock.patch(
-    "pytube.streams.request.stream",
+    "pytube.request.stream",
     MagicMock(return_value=iter([str(random.getrandbits(8 * 1024))])),
 )
 def test_download(cipher_signature):
@@ -125,7 +127,7 @@ def test_download(cipher_signature):
     "pytube.streams.request.head", MagicMock(return_value={"content-length": "16384"})
 )
 @mock.patch(
-    "pytube.streams.request.stream",
+    "pytube.request.stream",
     MagicMock(return_value=iter([str(random.getrandbits(8 * 1024))])),
 )
 @mock.patch("pytube.streams.target_directory", MagicMock(return_value="/target"))
@@ -143,7 +145,7 @@ def test_download_with_prefix(cipher_signature):
     "pytube.streams.request.head", MagicMock(return_value={"content-length": "16384"})
 )
 @mock.patch(
-    "pytube.streams.request.stream",
+    "pytube.request.stream",
     MagicMock(return_value=iter([str(random.getrandbits(8 * 1024))])),
 )
 @mock.patch("pytube.streams.target_directory", MagicMock(return_value="/target"))
@@ -161,7 +163,7 @@ def test_download_with_filename(cipher_signature):
     "pytube.streams.request.head", MagicMock(return_value={"content-length": "16384"})
 )
 @mock.patch(
-    "pytube.streams.request.stream",
+    "pytube.request.stream",
     MagicMock(return_value=iter([str(random.getrandbits(8 * 1024))])),
 )
 @mock.patch("pytube.streams.target_directory", MagicMock(return_value="/target"))
@@ -182,7 +184,7 @@ def test_download_with_existing(cipher_signature):
     "pytube.streams.request.head", MagicMock(return_value={"content-length": "16384"})
 )
 @mock.patch(
-    "pytube.streams.request.stream",
+    "pytube.request.stream",
     MagicMock(return_value=iter([str(random.getrandbits(8 * 1024))])),
 )
 @mock.patch("pytube.streams.target_directory", MagicMock(return_value="/target"))
@@ -213,7 +215,7 @@ def test_progressive_streams_return_includes_video_track(cipher_signature):
     "pytube.streams.request.head", MagicMock(return_value={"content-length": "16384"})
 )
 @mock.patch(
-    "pytube.streams.request.stream",
+    "pytube.request.stream",
     MagicMock(return_value=iter([str(random.getrandbits(8 * 1024))])),
 )
 def test_on_progress_hook(cipher_signature):
@@ -234,7 +236,7 @@ def test_on_progress_hook(cipher_signature):
     "pytube.streams.request.head", MagicMock(return_value={"content-length": "16384"})
 )
 @mock.patch(
-    "pytube.streams.request.stream",
+    "pytube.request.stream",
     MagicMock(return_value=iter([str(random.getrandbits(8 * 1024))])),
 )
 def test_on_complete_hook(cipher_signature):
@@ -337,14 +339,11 @@ def test_segmented_stream_on_404(cipher_signature):
             ]
 
             # Request order for stream:
-            # Filesize:
-            #   1. head(url) -> 404
-            #   2. get(url&sn=0)
-            #   3. head(url&sn=[1,2,3])
-            # Download:
-            #   4. info(url) -> 404
-            #   5. get(url&sn=0)
-            #   6. get(url&sn=[1,2,3])
+            #   1. get(url&sn=0)
+            #   2. head(url&sn=[1,2,3])
+            #   3. info(url) -> 404
+            #   4. get(url&sn=0)
+            #   5. get(url&sn=[1,2,3])
 
             # Handle filesize requests
             mock_head.side_effect = [
@@ -355,7 +354,6 @@ def test_segmented_stream_on_404(cipher_signature):
             # Each response must be followed by None, to break iteration
             #  in the stream() function
             mock_url_open_object.read.side_effect = [
-                responses[0], None,
                 responses[0], None,
                 responses[1], None,
                 responses[2], None,
@@ -384,7 +382,8 @@ def test_segmented_stream_on_404(cipher_signature):
 
 def test_segmented_only_catches_404(cipher_signature):
     stream = cipher_signature.streams.filter(adaptive=True)[0]
-    with mock.patch('pytube.request.head') as mock_head:
-        mock_head.side_effect = HTTPError('', 403, 'Forbidden', '', '')
-        with pytest.raises(HTTPError):
-            stream.download()
+    with mock.patch('pytube.request.stream') as mock_stream:
+        mock_stream.side_effect = HTTPError('', 403, 'Forbidden', '', '')
+        with mock.patch("pytube.streams.open", mock.mock_open(), create=True):
+            with pytest.raises(HTTPError):
+                stream.download()

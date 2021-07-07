@@ -36,8 +36,6 @@ class YouTube:
 
         :param str url:
             A valid YouTube watch URL.
-        :param bool defer_prefetch_init:
-            Defers executing any network requests.
         :param func on_progress_callback:
             (Optional) User defined callback function for stream download
             progress events.
@@ -86,6 +84,9 @@ class YouTube:
         self._author = None
         self._title = None
         self._publish_date = None
+
+    def __repr__(self):
+        return f'<pytube.__main__.YouTube object: videoId={self.video_id}>'
 
     @property
     def watch_html(self):
@@ -268,6 +269,8 @@ class YouTube:
             elif status == 'ERROR':
                 if reason == 'Video unavailable':
                     raise exceptions.VideoUnavailable(video_id=self.video_id)
+            elif status == 'LIVE_STREAM':
+                raise exceptions.LiveStreamError(video_id=self.video_id)
 
     @property
     def vid_info(self):
@@ -348,7 +351,20 @@ class YouTube:
         """
         if self._title:
             return self._title
-        self._title = self.player_response['videoDetails']['title']
+
+        try:
+            self._title = self.player_response['videoDetails']['title']
+        except KeyError:
+            # Check_availability will raise the correct exception in most cases
+            #  if it doesn't, ask for a report.
+            self.check_availability()
+            raise exceptions.PytubeError(
+                (
+                    f'Exception while accessing title of {self.watch_url}. '
+                    'Please file a bug report at https://github.com/pytube/pytube'
+                )
+            )
+
         return self._title
 
     @title.setter
@@ -418,9 +434,26 @@ class YouTube:
     @property
     def keywords(self) -> List[str]:
         """Get the video keywords.
+
         :rtype: List[str]
         """
         return self.player_response.get('videoDetails', {}).get('keywords', [])
+
+    @property
+    def channel_id(self) -> str:
+        """Get the video poster's channel id.
+
+        :rtype: str
+        """
+        return self.player_response.get('videoDetails', {}).get('channelId', None)
+
+    @property
+    def channel_url(self) -> str:
+        """Construct the channel url for the video's poster from the channel id.
+
+        :rtype: str
+        """
+        return f'https://www.youtube.com/channel/{self.channel_id}'
 
     @property
     def metadata(self) -> Optional[YouTubeMetadata]:

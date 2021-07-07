@@ -6,7 +6,7 @@ import re
 from collections import OrderedDict
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import parse_qs, parse_qsl, quote, unquote, urlencode
+from urllib.parse import parse_qs, parse_qsl, quote, unquote, urlencode, urlparse
 
 from pytube.cipher import Cipher
 from pytube.exceptions import HTMLParseError, LiveStreamError, RegexMatchError
@@ -134,6 +134,8 @@ def playability_status(watch_html: str) -> (str, str):
     """
     player_response = initial_player_response(watch_html)
     status_dict = player_response.get('playabilityStatus', {})
+    if 'liveStreamability' in status_dict:
+        return 'LIVE_STREAM', 'Video is a live stream.'
     if 'status' in status_dict:
         if 'reason' in status_dict:
             return status_dict['status'], [status_dict['reason']]
@@ -178,6 +180,42 @@ def playlist_id(url: str) -> str:
     return parse_qs(parsed.query)['list'][0]
 
 
+def channel_name(url: str) -> str:
+    """Extract the ``channel_name`` or ``channel_id`` from a YouTube url.
+
+    This function supports the following patterns:
+
+    - :samp:`https://youtube.com/c/{channel_name}/*`
+    - :samp:`https://youtube.com/channel/{channel_id}/*
+    - :samp:`https://youtube.com/u/{channel_name}/*`
+    - :samp:`https://youtube.com/user/{channel_id}/*
+
+    :param str url:
+        A YouTube url containing a channel name.
+    :rtype: str
+    :returns:
+        YouTube channel name.
+    """
+    patterns = [
+        r"(?:\/(c)\/([\d\w_\-]+)(\/.*)?)",
+        r"(?:\/(channel)\/([\w\d_\-]+)(\/.*)?)",
+        r"(?:\/(u)\/([\d\w_\-]+)(\/.*)?)",
+        r"(?:\/(user)\/([\w\d_\-]+)(\/.*)?)"
+    ]
+    for pattern in patterns:
+        regex = re.compile(pattern)
+        function_match = regex.search(url)
+        if function_match:
+            logger.debug("finished regex search, matched: %s", pattern)
+            uri_style = function_match.group(1)
+            uri_identifier = function_match.group(2)
+            return f'/{uri_style}/{uri_identifier}'
+
+    raise RegexMatchError(
+        caller="channel_name", pattern="patterns"
+    )
+
+
 def video_info_url(video_id: str, watch_url: str) -> str:
     """Construct the video_info url.
 
@@ -196,6 +234,9 @@ def video_info_url(video_id: str, watch_url: str) -> str:
             ("ps", "default"),
             ("eurl", quote(watch_url)),
             ("hl", "en_US"),
+            ("html5", "1"),
+            ("c", "TVHTML5"),
+            ("cver", "7.20201028"),
         ]
     )
     return _video_info_url(params)
@@ -221,13 +262,20 @@ def video_info_url_age_restricted(video_id: str, embed_html: str) -> str:
     # Python 2.7+.
     eurl = f"https://youtube.googleapis.com/v/{video_id}"
     params = OrderedDict(
-        [("video_id", video_id), ("eurl", eurl), ("sts", sts),]
+        [
+            ("video_id", video_id),
+            ("eurl", eurl),
+            ("sts", sts),
+            ("html5", "1"),
+            ("c", "TVHTML5"),
+            ("cver", "7.20201028"),
+        ]
     )
     return _video_info_url(params)
 
 
 def _video_info_url(params: OrderedDict) -> str:
-    return "https://youtube.com/get_video_info?" + urlencode(params)
+    return "https://www.youtube.com/get_video_info?" + urlencode(params)
 
 
 def js_url(html: str) -> str:
@@ -420,6 +468,22 @@ def apply_signature(config_args: Dict, fmt: str, js: str) -> None:
         logger.debug(
             "finished descrambling signature for itag=%s", stream["itag"]
         )
+        query_params = parse_qs(urlparse(url).query)
+        if 'ratebypass' not in query_params.keys():
+            # Cipher n to get the updated value
+
+            initial_n = list(query_params['n'][0])
+            new_n = cipher.calculate_n(initial_n)
+            query_params['n'][0] = new_n
+
+            # Update the value
+            parsed = urlparse(url)
+            # The parsed query params are lists of a single element, convert to proper dicts.
+            query_params = {
+                k: v[0] for k,v in query_params.items()
+            }
+            url = f'{parsed.scheme}://{parsed.netloc}{parsed.path}?{urlencode(query_params)}'
+
         # 403 forbidden fix
         stream_manifest[i]["url"] = url + "&sig=" + signature
 
@@ -468,6 +532,7 @@ def apply_descrambler(stream_data: Dict, key: str) -> None:
                     "fps": format_item["fps"] if 'video' in format_item["mimeType"] else None,
                     "bitrate": format_item.get("bitrate"),
                     "is_otf": (format_item.get("type") == otf_type),
+                    'content_length': int(format_item.get('contentLength', 0)),
                 }
                 for format_item in formats
             ]
@@ -490,6 +555,7 @@ def apply_descrambler(stream_data: Dict, key: str) -> None:
                     "fps": format_item["fps"] if 'video' in format_item["mimeType"] else None,
                     "bitrate": format_item.get("bitrate"),
                     "is_otf": (format_item.get("type") == otf_type),
+                    'content_length': int(format_item.get('contentLength', 0)),
                 }
                 for i, format_item in enumerate(formats)
             ]
